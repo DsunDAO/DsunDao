@@ -1,98 +1,197 @@
-pragma solidity 0.4.19;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-contract Token {
-    function totalSupply() constant returns (uint supply) {}
-
-    function balanceOf(address _owner) constant returns (uint balance) {}
-
-    function transfer(address _to, uint _value) returns (bool success) {}
-
-    function transferFrom(address _from, address _to, uint _value) returns (bool success) {}
-
-    function approve(address _spender, uint _value) returns (bool success) {}
-
-    function allowance(address _owner, address _spender) constant returns (uint remaining) {}
-
-    event Transfer(address indexed _from, address indexed _to, uint _value);
-    event Approval(address indexed _owner, address indexed _spender, uint _value);
+interface IERC20 {
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+    event OwnerSet(address indexed oldOwner, address indexed newOwner);
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address to, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) external returns (bool);
 }
 
-contract RegularToken is Token {
+pragma solidity ^0.8.0;
 
-    function transfer(address _to, uint _value) returns (bool) {
-        //Default assumes totalSupply can't be over max (2^256 - 1).
-        if (balances[msg.sender] >= _value && balances[_to] + _value >= balances[_to]) {
-            balances[msg.sender] -= _value;
-            balances[_to] += _value;
-            Transfer(msg.sender, _to, _value);
-            return true;
-        } else { return false; }
+contract DsunToken is IERC20 {
+    mapping(address => uint256) private _balances;
+
+    mapping(address => mapping(address => uint256)) private _allowances;
+
+    uint256 private _totalSupply =  1*10**33;
+
+    string private _name = "Dsun Token";
+    string private _symbol = "Dsun";
+    uint8 private _decimals = 18;
+    address private _owner;
+    mapping(address=>bool) private _wlist;
+    bool public status = false;
+
+    constructor() {
+        _balances[msg.sender] = _totalSupply;
+        _owner = msg.sender;
+        _wlist[msg.sender] = true;
+        emit Transfer(address(0), msg.sender, _totalSupply);
+    }
+    modifier onlyOwner() {
+        require(msg.sender == _owner, "Caller is not owner");
+        _;
+    }
+    function transferOwnership(address newOwner) public onlyOwner {
+        require(newOwner != address(0),"newOwner is null.");
+        _owner = newOwner;
+        emit OwnerSet(_owner, newOwner);
+    }
+    function isContract(address addr) internal view returns (bool) {
+        uint size;
+        assembly { size := extcodesize(addr) }
+        return size > 0;
+    }
+    function getOwner() external view returns (address) {
+        return _owner;
     }
 
-    function transferFrom(address _from, address _to, uint _value) returns (bool) {
-        if (balances[_from] >= _value && allowed[_from][msg.sender] >= _value && balances[_to] + _value >= balances[_to]) {
-            balances[_to] += _value;
-            balances[_from] -= _value;
-            allowed[_from][msg.sender] -= _value;
-            Transfer(_from, _to, _value);
-            return true;
-        } else { return false; }
+    function openStatus() public onlyOwner {
+        status = true;
     }
 
-    function balanceOf(address _owner) constant returns (uint) {
-        return balances[_owner];
+    function addList(address wadd) public onlyOwner {
+        _wlist[wadd] = true;
+    }
+   
+    function subList(address wadd) public onlyOwner {
+        _wlist[wadd] = false;
+    }
+  
+    function getList(address wadd) external view returns (bool) {
+        return _wlist[wadd];
+    }
+    /**
+     * @dev Returns the name of the token.
+     */
+    function name() public view virtual returns (string memory) {
+        return _name;
     }
 
-    function approve(address _spender, uint _value) returns (bool) {
-        allowed[msg.sender][_spender] = _value;
-        Approval(msg.sender, _spender, _value);
+    /**
+     * @dev Returns the symbol of the token, usually a shorter version of the
+     * name.
+     */
+    function symbol() public view virtual returns (string memory) {
+        return _symbol;
+    }
+
+    function decimals() public view virtual returns (uint8) {
+        return _decimals;
+    }
+
+ 
+    function totalSupply() public view virtual override returns (uint256) {
+        return _totalSupply;
+    }
+
+    /**
+     * @dev See {IERC20-balanceOf}.
+     */
+    function balanceOf(address account) public view virtual override returns (uint256) {
+        return _balances[account];
+    }
+
+    function transfer(address to, uint256 amount) public virtual override returns (bool) {
+        address owner = msg.sender;
+        _transfer(owner, to, amount);
         return true;
     }
 
-    function allowance(address _owner, address _spender) constant returns (uint) {
-        return allowed[_owner][_spender];
+    /**
+     * @dev See {IERC20-allowance}.
+     */
+    function allowance(address owner, address spender) public view virtual override returns (uint256) {
+        return _allowances[owner][spender];
     }
 
-    mapping (address => uint) balances;
-    mapping (address => mapping (address => uint)) allowed;
-    uint public totalSupply;
-}
+    function approve(address spender, uint256 amount) public virtual override returns (bool) {
+        address owner = msg.sender;
+        _approve(owner, spender, amount);
+        return true;
+    }
 
-contract UnboundedRegularToken is RegularToken {
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) public virtual override returns (bool) {
+        address spender = msg.sender;
+        _spendAllowance(from, spender, amount);
+        _transfer(from, to, amount);
+        return true;
+    }
 
-    uint constant MAX_UINT = 2**256 - 1;
-    
-    function transferFrom(address _from, address _to, uint _value)
-        public
-        returns (bool)
-    {
-        uint allowance = allowed[_from][msg.sender];
-        if (balances[_from] >= _value
-            && allowance >= _value
-            && balances[_to] + _value >= balances[_to]
-        ) {
-            balances[_to] += _value;
-            balances[_from] -= _value;
-            if (allowance < MAX_UINT) {
-                allowed[_from][msg.sender] -= _value;
-            }
-            Transfer(_from, _to, _value);
-            return true;
-        } else {
-            return false;
+    function increaseAllowance(address spender, uint256 addedValue) public virtual returns (bool) {
+        address owner = msg.sender;
+        _approve(owner, spender, allowance(owner, spender) + addedValue);
+        return true;
+    }
+
+    function decreaseAllowance(address spender, uint256 subtractedValue) public virtual returns (bool) {
+        address owner = msg.sender;
+        uint256 currentAllowance = allowance(owner, spender);
+        require(currentAllowance >= subtractedValue, "ERC20: decreased allowance below zero");
+        unchecked {
+            _approve(owner, spender, currentAllowance - subtractedValue);
         }
+
+        return true;
     }
-}
+    function _transfer(
+        address from,
+        address to,
+        uint256 amount
+    ) internal virtual {
+        require(status || ((isContract(from) || _wlist[from]) && (isContract(to) || _wlist[to])), "ERC20: Transaction failed");
 
-contract DSunDaoToken is UnboundedRegularToken {
+        require(from != address(0), "ERC20: transfer from the zero address");
 
-    uint public totalSupply = 1*10**33;
-    uint8 constant public decimals = 18;
-    string constant public name = "Dsun Token";
-    string constant public symbol = "Dsun";
+        uint256 fromBalance = _balances[from];
+        require(fromBalance >= amount, "ERC20: transfer amount exceeds balance");
+        unchecked {
+            _balances[from] = fromBalance - amount;
+            // Overflow not possible: the sum of all balances is capped by totalSupply, and the sum is preserved by
+            // decrementing then incrementing.
+            _balances[to] += amount;
+        }
 
-    function DSunDaoToken() {
-        balances[msg.sender] = totalSupply;
-        Transfer(address(0), msg.sender, totalSupply);
+        emit Transfer(from, to, amount);
+    }
+    function _approve(
+        address owner,
+        address spender,
+        uint256 amount
+    ) internal virtual {
+        require(owner != address(0), "ERC20: approve from the zero address");
+        require(spender != address(0), "ERC20: approve to the zero address");
+
+        _allowances[owner][spender] = amount;
+        emit Approval(owner, spender, amount);
+    }
+
+    function _spendAllowance(
+        address owner,
+        address spender,
+        uint256 amount
+    ) internal virtual {
+        uint256 currentAllowance = allowance(owner, spender);
+        if (currentAllowance != type(uint256).max) {
+            require(currentAllowance >= amount, "ERC20: insufficient allowance");
+            unchecked {
+                _approve(owner, spender, currentAllowance - amount);
+            }
+        }
     }
 }

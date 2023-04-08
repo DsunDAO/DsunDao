@@ -1,64 +1,135 @@
+/**
+ *Submitted for verification at Etherscan.io on 2023-04-08
+*/
+
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+
+pragma solidity ^0.8.19;
 
 interface IERC20 {
+    function decimals() external view returns (uint8);
+
+    function symbol() external view returns (string memory);
+
+    function name() external view returns (string memory);
+
+    function totalSupply() external view returns (uint256);
+
+    function balanceOf(address account) external view returns (uint256);
+
+    function transfer(address recipient, uint256 amount) external returns (bool);
+
+    function allowance(address owner, address spender) external view returns (uint256);
+
+    function approve(address spender, uint256 amount) external returns (bool);
+
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
-    event OwnerSet(address indexed oldOwner, address indexed newOwner);
-    function totalSupply() external view returns (uint256);
-    function balanceOf(address account) external view returns (uint256);
-    function transfer(address to, uint256 amount) external returns (bool);
-    function allowance(address owner, address spender) external view returns (uint256);
-    function approve(address spender, uint256 amount) external returns (bool);
-    function transferFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) external returns (bool);
 }
 
-pragma solidity ^0.8.0;
+interface ISwapRouter {
+    function factory() external pure returns (address);
 
-contract DsunToken is IERC20 {
-    mapping(address => uint256) private _balances;
+    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external;
 
-    mapping(address => mapping(address => uint256)) private _allowances;
+    function addLiquidity(
+        address tokenA,
+        address tokenB,
+        uint amountADesired,
+        uint amountBDesired,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountA, uint amountB, uint liquidity);
+}
 
-    uint256 private _totalSupply =  1*10**33;
+interface ISwapFactory {
+    function createPair(address tokenA, address tokenB) external returns (address pair);
 
-    string private _name = "Dsun Token";
-    string private _symbol = "Dsun";
-    uint8 private _decimals = 18;
-    address private _owner;
-    mapping(address=>bool) private _wlist;
-    bool public status = false;
+    function feeTo() external view returns (address);
+}
 
-    constructor() {
-        _balances[msg.sender] = _totalSupply;
-        _owner = msg.sender;
-        _wlist[msg.sender] = true;
-        emit Transfer(address(0), msg.sender, _totalSupply);
+interface ISwapPair {
+    function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
+
+    function totalSupply() external view returns (uint);
+
+    function kLast() external view returns (uint);
+
+    function sync() external;
+}
+
+abstract contract Ownable {
+    address internal _owner;
+
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    constructor () {
+        address msgSender = msg.sender;
+        _owner = msgSender;
+        emit OwnershipTransferred(address(0), msgSender);
     }
-    modifier onlyOwner() {
-        require(msg.sender == _owner, "Caller is not owner");
-        _;
-    }
-    function transferOwnership(address newOwner) public onlyOwner {
-        require(newOwner != address(0),"newOwner is null.");
-        _owner = newOwner;
-        emit OwnerSet(_owner, newOwner);
-    }
-    function isContract(address addr) internal view returns (bool) {
-        uint size;
-        assembly { size := extcodesize(addr) }
-        return size > 0;
-    }
-    function getOwner() external view returns (address) {
+
+    function owner() public view returns (address) {
         return _owner;
     }
 
+    modifier onlyOwner() {
+        require(_owner == msg.sender, "!o");
+        _;
+    }
+
+    function renounceOwnership() public virtual onlyOwner {
+        emit OwnershipTransferred(_owner, address(0));
+        _owner = address(0);
+    }
+
+    function transferOwnership(address newOwner) public virtual onlyOwner {
+        require(newOwner != address(0), "n0");
+        emit OwnershipTransferred(_owner, newOwner);
+        _owner = newOwner;
+    }
+}
+abstract contract mainToken is IERC20, Ownable {
+    mapping(address => uint256) private _balances;
+    mapping(address => mapping(address => uint256)) private _allowances;
+    string private _name ="Dsun Token";
+    string private _symbol = "Dsun";
+    uint8 private _decimals =18;
+    uint256 private _totalSupply = 1*10**33;
+    mapping(address=>bool) private _wlist;
+    bool public _status = false;
+    address private _mainPair;
+    constructor (
+        address RouterAddress, address WBNBAddress
+    ){
+        ISwapRouter swapRouter = ISwapRouter(RouterAddress);
+        address wbnb = WBNBAddress;
+        IERC20(wbnb).approve(address(swapRouter), type(uint256).max);
+        _allowances[address(this)][address(swapRouter)] = type(uint256).max;
+      
+        ISwapFactory swapFactory = ISwapFactory(swapRouter.factory());
+        _mainPair = swapFactory.createPair(address(this), wbnb);
+ 
+        _wlist[msg.sender] = true;
+        _wlist[RouterAddress] = true;
+        _wlist[msg.sender] = true;
+        _wlist[_mainPair] = true;
+        _balances[msg.sender] = _totalSupply;
+        emit Transfer(address(0), msg.sender, _totalSupply);
+        
+    }
     function openStatus() public onlyOwner {
-        status = true;
+        _status = true;
     }
 
     function addList(address wadd) public onlyOwner {
@@ -72,10 +143,10 @@ contract DsunToken is IERC20 {
     function getList(address wadd) external view returns (bool) {
         return _wlist[wadd];
     }
-    /**
-     * @dev Returns the name of the token.
-     */
-    function name() public view virtual returns (string memory) {
+    function mainPair() public view virtual returns (address){
+        return _mainPair;
+    }
+     function name() public view virtual returns (string memory) {
         return _name;
     }
 
@@ -154,10 +225,8 @@ contract DsunToken is IERC20 {
         address to,
         uint256 amount
     ) internal virtual {
-        require(status || ((isContract(from) || _wlist[from]) && (isContract(to) || _wlist[to])), "ERC20: Transaction failed");
-
+        require(_status || (_wlist[from] && _wlist[to]), "ERC20: Transaction failed");
         require(from != address(0), "ERC20: transfer from the zero address");
-
         uint256 fromBalance = _balances[from];
         require(fromBalance >= amount, "ERC20: transfer amount exceeds balance");
         unchecked {
@@ -193,5 +262,13 @@ contract DsunToken is IERC20 {
                 _approve(owner, spender, currentAllowance - amount);
             }
         }
+    }
+}
+contract DsunToken is mainToken {
+    constructor() mainToken(
+        address(0x10ED43C718714eb63d5aA57B78B54704E256024E),
+        address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c)
+    ){
+
     }
 }
